@@ -1,6 +1,5 @@
 const debug = false;
 let tempMatrix = new THREE.Matrix4();
-let tempVector = new THREE.Vector3();
 let camera, scene, renderer, container;
 let conLeft, conRight, xrConLeft, xrConRight;
 let light, testCube;
