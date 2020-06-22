@@ -1,40 +1,73 @@
-const debug = false;
-let tempMatrix = new THREE.Matrix4();
-let tempVector = new THREE.Vector3();
-let camera, scene, renderer, container;
-let conLeft, conRight, xrConLeft, xrConRight;
-let light, testCube;
+import * as THREE from './build/three.module.js';
+import { ControllerHelper } from './jsm/webxr/ControllerHelper.js';
+import { VRButton } from './jsm/webxr/VRButton.js';
 
+let camera, scene, renderer, light, testCube, playerRig, controllers;
 init();
-requestSession();
-
-window.addEventListener("unload", closeSession);
 
 function init() {
-  container = document.createElement('div');
+  let container = document.createElement('div');
   document.body.appendChild(container);
-
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.z = 5;
-
-  light = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
-  scene.add(light);
-
-  conLeft = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshLambertMaterial({ color: 0xff0000 }));
-  conRight = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshLambertMaterial({ color: 0x0000ff }));
-  scene.add(conLeft, conRight);
-
-  testCube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshLambertMaterial({ color: 0xff0000 }));
-  testCube.position.z -= 1;
-  testCube.position.y += 0.5;
-  scene.add(testCube);
-
 
   renderer = new THREE.WebGLRenderer({ alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
   renderer.xr.enabled = true;
+
+  scene = new THREE.Scene();
+
+  light = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
+  scene.add(light);
+
+  // The player rig acts as a container for our camera and controls, allowing us to easily move the player
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  playerRig = new THREE.Group();
+  playerRig.position.set(0, 0, 0);
+  playerRig.add(camera);
+  scene.add(playerRig);
+
+  testCube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshLambertMaterial({ color: 0xff0000 }));
+  testCube.position.z -= 1.5;
+  testCube.position.y += 0.5;
+  scene.add(testCube);
+
+  setupControllers();
+
+  window.addEventListener('resize', onWindowResize, false);
+  window.addEventListener('unload', closeSession);
+
+  // Switch these lines to use the button or auto-session request
+  // document.body.appendChild(VRButton.createButton(renderer));
+  requestSession();
+}
+
+function setupControllers() {
+  // Save the controllers and grips and add them to the player rig
+  document.addEventListener('controllerHelperReady', function (ev) {
+    controllers = ev.detail;
+    for (const hand in controllers) {
+      if (!controllers.hasOwnProperty(hand)) continue;
+      console.log(`Setup ${hand} hand controller`);
+      playerRig.add(controllers[hand].model);
+      playerRig.add(controllers[hand].grip);
+    }
+  });
+
+  document.addEventListener('controllerHelperStateChange', function (ev) {
+    console.log('Controller State Changed:', ev.detail);
+  });
+
+  document.addEventListener('controllerHelperValueChange', function (ev) {
+    console.log('Controller Value Changed:', ev.detail);
+  });
+
+  document.addEventListener('controllerHelperAxisChange', function (ev) {
+    console.log('Controller Axis Changed:', ev.detail);
+  });
+
+  document.addEventListener('controllerHelperChange', function () {
+    console.log('Controller Changed:', ControllerHelper.state);
+  });
 }
 
 function requestSession() {
@@ -46,33 +79,22 @@ function requestSession() {
 
 function onSessionStarted(session) {
   renderer.xr.setSession(session);
-  xrConLeft = renderer.xr.getController(0);
-  xrConRight = renderer.xr.getController(1);
-  animate();
+  renderer.setAnimationLoop(render);
+  ControllerHelper.setupControllers(renderer);
 }
 
-async function closeSession(session) {
+async function closeSession() {
   await renderer.xr.getSession().end();
 }
 
-function animate() {
-  renderer.setAnimationLoop(render);
-}
-
 function render() {
-  conLeft.position.x = xrConLeft.position.x;
-  conLeft.position.y = xrConLeft.position.y;
-  conLeft.position.z = xrConLeft.position.z;
-  conLeft.rotation.x = xrConLeft.rotation.x;
-  conLeft.rotation.y = xrConLeft.rotation.y;
-  conLeft.rotation.z = xrConLeft.rotation.z;
-
-  conRight.position.x = xrConRight.position.x;
-  conRight.position.y = xrConRight.position.y;
-  conRight.position.z = xrConRight.position.z;
-  conRight.rotation.x = xrConRight.rotation.x;
-  conRight.rotation.y = xrConRight.rotation.y;
-  conRight.rotation.z = xrConRight.rotation.z;
-
+  if (renderer.xr.isPresenting) ControllerHelper.updateControls();
   renderer.render(scene, camera);
 }
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
