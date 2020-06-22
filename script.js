@@ -45,11 +45,12 @@ function setupControllers() {
   // Save the controllers and grips and add them to the player rig
   document.addEventListener('controllerHelperReady', function (ev) {
     controllers = ev.detail;
-    for (const hand in controllers) {
-      if (!controllers.hasOwnProperty(hand)) continue;
+    console.log(`Found ${Object.keys(controllers.hands).length} ${controllers.type} controller(s)`);
+    for (const hand in controllers.hands) {
+      if (!controllers.hands.hasOwnProperty(hand)) continue;
       console.log(`Setup ${hand} hand controller`);
-      playerRig.add(controllers[hand].model);
-      playerRig.add(controllers[hand].grip);
+      playerRig.add(controllers.hands[hand].model);
+      playerRig.add(controllers.hands[hand].grip);
     }
   });
 

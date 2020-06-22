@@ -72,14 +72,14 @@ import * as THREE from '../../build/three.module.js';
 import { XRControllerModelFactory } from './XRControllerModelFactory.js';
 
 var ControllerHelper = {
-  _rawState: {},
   _controllerMap: null,
+  _useMaps: true,
   state: {},
   controllerType: null,
   totalInputs: 1,
   controllersReady: false,
 
-  setupControllers: function (renderer) {
+  setupControllers: function (renderer, useMaps = true) {
     const session = renderer.xr.getSession();
     this.totalInputs = session.inputSources.length - 1;
     for (let i = 0; i <= this.totalInputs; i++) {
@@ -91,7 +91,7 @@ var ControllerHelper = {
       let that = this;
       controller.addEventListener('connected', function(event) {
         this.add(that.buildControllerPointer(event.data));
-        that.assignController(i, controller, controllerGrip, event.data)
+        that.assignController(i, controller, controllerGrip, event.data);
       });
 
       controller.addEventListener('disconnected', function() {
@@ -124,18 +124,24 @@ var ControllerHelper = {
       model: controller,
       grip: grip,
       index: index
-    }
+    };
 
-    // We're going to assume two controllers
     if (index + 1 >= this.totalInputs) {
-      this.controllersReady = true;
-      document.dispatchEvent(new CustomEvent('controllerHelperReady', { detail: controllers }));
+      let that = this;
+      let interval = setInterval(function() {
+        if (that.controllerType && !that.controllersReady) {
+          clearInterval(interval);
+          that.controllersReady = true;
+          document.dispatchEvent(new CustomEvent('controllerHelperReady', { detail: {
+            hands: controllers,
+            type: that.controllerType
+          }}));
+        }
+      }, 300);
     }
   },
 
   updateControls: function () {
-    if (!this.controllersReady) return;
-
     if (!this.controllerType) {
       if (controllers.left != undefined && controllers.left.grip.children[0].motionController !== null) {
         this.controllerType = controllers.left.grip.children[0].motionController.id;
@@ -158,39 +164,32 @@ var ControllerHelper = {
       }
     }
 
+    if (!this.controllerType) return;
+
     for (const hand in controllers) {
       if (!controllers.hasOwnProperty(hand)) continue;
       if (controllers[hand].grip.children[0].motionController == null) continue;
 
-      if (typeof this._rawState[hand] === 'undefined') this._rawState[hand] = {};
       if (typeof this.state[hand] === 'undefined') this.state[hand] = {};
 
       const components = controllers[hand].grip.children[0].motionController.components;
       for (const name in components) {
         if (!components.hasOwnProperty(name)) continue;
 
-        if (typeof this._rawState[hand][name] === 'undefined') {
-          this._rawState[hand][name] = {
+        let mapName = name;
+        if (this._useMaps) mapName = this._controllerMap[hand][name];
+
+        if (typeof this.state[hand][mapName] === 'undefined') {
+          this.state[hand][mapName] = {
             btnValue: components[name].values.button,
-            btnState: components[name].values.state
-          }
+            btnState: components[name].values.state,
+            xrInputName: name
+          };
 
           // TODO: This is a debug, uncomment when done
-          // if (components[name].type === 'thumbstick' || components[name].type === 'touchpad') {
-          //   this._rawState[hand][name]['xAxis'] = 0;
-          //   this._rawState[hand][name]['yAxis'] = 0;
-          // }
-        }
-
-        if (typeof this.state[hand][this._controllerMap[hand][name]] === 'undefined') {
-          this.state[hand][this._controllerMap[hand][name]] = {
-            btnValue: components[name].values.button,
-            btnState: components[name].values.state
-          }
-
           if (components[name].type === 'thumbstick' || components[name].type === 'touchpad') {
-            this.state[hand][this._controllerMap[hand][name]]['xAxis'] = 0;
-            this.state[hand][this._controllerMap[hand][name]]['yAxis'] = 0;
+            this.state[hand][mapName]['xAxis'] = 0;
+            this.state[hand][mapName]['yAxis'] = 0;
           }
         }
 
@@ -198,33 +197,29 @@ var ControllerHelper = {
         let stateChange = false;
         let axisChange = false;
 
-        if (this._rawState[hand][name].btnValue !== components[name].values.button) {
+        if (this.state[hand][mapName].btnValue !== components[name].values.button) {
           valueChange = true;
-          this._rawState[hand][name].btnValue = components[name].values.button;
-          this.state[hand][this._controllerMap[hand][name]].btnValue = components[name].values.button;
+          this.state[hand][mapName].btnValue = components[name].values.button;
         }
-        if (this._rawState[hand][name].btnState !== components[name].values.state) {
+        if (this.state[hand][mapName].btnState !== components[name].values.state) {
           stateChange = true;
-          this._rawState[hand][name].btnState = components[name].values.state;
-          this.state[hand][this._controllerMap[hand][name]].btnState = components[name].values.state;
+          this.state[hand][mapName].btnState = components[name].values.state;
         }
 
         if (components[name].type === 'thumbstick' || components[name].type === 'touchpad') {
-          if (this._rawState[hand][name]['xAxis'] !== components[name].values.xAxis) {
+          if (this.state[hand][mapName]['xAxis'] !== components[name].values.xAxis) {
             axisChange = true;
-            this._rawState[hand][name]['xAxis'] = components[name].values.xAxis;
-            this.state[hand][this._controllerMap[hand][name]]['xAxis'] = components[name].values.xAxis;
+            this.state[hand][mapName]['xAxis'] = components[name].values.xAxis;
           }
-          if (this._rawState[hand][name]['yAxis'] !== components[name].values.yAxis) {
+          if (this.state[hand][mapName]['yAxis'] !== components[name].values.yAxis) {
             axisChange = true;
-            this._rawState[hand][name]['yAxis'] = components[name].values.yAxis;
-            this.state[hand][this._controllerMap[hand][name]]['yAxis'] = components[name].values.yAxis;
+            this.state[hand][mapName]['yAxis'] = components[name].values.yAxis;
           }
         }
 
         if (stateChange || valueChange || axisChange) {
           if (stateChange) {
-            const stateName = this._controllerMap[hand][name];
+            const stateName = mapName;
             if (stateName === 'btnPrimaryThumbstick') stateName = 'btnPrimary';
             else if (stateName === 'btnSecondaryThumbstick') stateName = 'btnSecondary';
             else if (stateName === 'btnSpecialThumbstick') stateName = 'btnSpecial';
@@ -236,7 +231,7 @@ var ControllerHelper = {
           }
 
           if (valueChange) {
-            const valName = this._controllerMap[hand][name];
+            const valName = mapName;
             if (valName === 'btnPrimaryThumbstick') valName = 'btnPrimary';
             else if (valName === 'btnSecondaryThumbstick') valName = 'btnSecondary';
             else if (valName === 'btnSpecialThumbstick') valName = 'btnSpecial';
@@ -248,7 +243,7 @@ var ControllerHelper = {
           }
 
           if (axisChange) {
-            const axisName = this._controllerMap[hand][name];
+            const axisName = mapName;
             if (axisName === 'btnPrimaryThumbstick') axisName = 'btnPrimary';
             else if (axisName === 'btnSecondaryThumbstick') axisName = 'btnSecondary';
             else if (axisName === 'btnSpecialThumbstick') axisName = 'btnSpecial';
@@ -258,7 +253,6 @@ var ControllerHelper = {
               xAxis: components[name].values.xAxis,
               yAxis: components[name].values.yAxis
             }}));
-            components[name].values.yAxis
           }
 
           document.dispatchEvent(new Event('controllerHelperChange'));
